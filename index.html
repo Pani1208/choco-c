@@ -503,7 +503,7 @@ const NET={cid:'c'+Math.random().toString(36).slice(2,10),tp:null,code:null,isHo
     if(urlQ.get('net')==='local')this.tp=await localTransport(code,onMsg,onPres,this.meta);
     else{await loadSupa();this.tp=await supaTransport(code,onMsg,onPres,this.meta)}
   },
-  leave(){if(this.tp){try{this.tp.close()}catch(e){}}this.tp=null;this.code=null;this.isHost=false;this.members={};this.dropWaiters()},
+  leave(){clearInterval(this.whT);if(this.tp){try{this.tp.close()}catch(e){}}this.tp=null;this.code=null;this.isHost=false;this.members={};this.dropWaiters()},
   send(m){m.from=this.cid;try{this.tp&&this.tp.send(m)}catch(e){}},
   setState(st){if(!this.tp||!this.meta)return;this.meta=Object.assign({},this.meta,{st});try{this.tp.track(this.meta)}catch(e){}},
   dropWaiters(){for(const k in this.waiters){const w=this.waiters[k];clearTimeout(w.tm);try{w.rej({abort:true})}catch(e){}}this.waiters={};this.peelSub=null},
@@ -536,10 +536,13 @@ const NET={cid:'c'+Math.random().toString(36).slice(2,10),tp:null,code:null,isHo
       if(!this.isHost&&this.hostSeen&&!hostIn&&!S.modal){S.modal='hostgone'}
       render();
     }else if(S.screen==='lobby'){
-      if(!this.isHost&&this.hostSeen&&!hostIn)S.lob.err='ホストが部屋を出ました';
+      if(!this.isHost&&this.hostSeen&&!hostIn){this.hostSeen=false;S.lob.err='';this.watchHost()}
       render();
     }
   },
+  watchHost(){clearInterval(this.whT);let n=0;this.whT=setInterval(()=>{n++;if(!this.tp||this.isHost){clearInterval(this.whT);return}
+    const hostIn=Object.values(this.members).some(x=>x.host);if(hostIn){this.hostSeen=true;if(S.lob.note==='部屋をさがしています…'){S.lob.note='';if(S.screen==='lobby')render()}if(n>2)clearInterval(this.whT);return}
+    if(n>=3){const first=this.humans().filter(m=>m.st!=='gone')[0];if(first&&first.cid===this.cid){this.isHost=true;this.hostSeen=true;this.meta=Object.assign({},this.meta,{host:true});try{this.tp.track(this.meta)}catch(e){}S.lob.err='';S.lob.note='あなたがホストになりました';clearInterval(this.whT);if(S.screen==='lobby')render()}}},1200)},
   humans(){return Object.values(this.members).sort((a,b)=>a.at-b.at||(a.cid<b.cid?-1:1))}
 };
 function loadSupa(){if(window.supabase&&window.supabase.createClient)return Promise.resolve();return new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';s.onload=()=>res();s.onerror=()=>rej(new Error('通信の準備に失敗しました'));document.head.appendChild(s)})}
@@ -579,7 +582,7 @@ async function joinRoom(){
   const name=(S.form.name||'').trim()||'ななし';save('name',name);const code=(S.form.code||'').replace(/\D/g,'');
   if(code.length!==4){S.lob.err='合言葉は4桁の数字です';render();return}
   S.lob.err='';S.lob.busy=true;render();
-  try{await NET.connect(code,name,false);S.screen='lobby';setTimeout(()=>{if(S.screen==='lobby'&&!NET.hostSeen){S.lob.err='部屋が見つかりません。合言葉を確認してください';render()}},4000)}
+  try{await NET.connect(code,name,false);S.screen='lobby';S.lob.note='部屋をさがしています…';NET.watchHost()}
   catch(e){S.lob.err=e.message||String(e);NET.leave()}
   S.lob.busy=false;render();
 }
